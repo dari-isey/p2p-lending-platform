@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>P2P Кредитование</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        div { margin-bottom: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 8px; }
+        input, button { margin: 5px; padding: 8px; }
+        pre { background: #f4f4f4; padding: 10px; overflow-x: auto; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>P2P Кредитование — тестовый клиент</h1>
+
+    <div>
+        <h3>1. Регистрация</h3>
+        <input type="text" id="regName" placeholder="ФИО">
+        <input type="email" id="regEmail" placeholder="Email">
+        <input type="text" id="regPhone" placeholder="Телефон">
+        <input type="password" id="regPassword" placeholder="Пароль">
+        <select id="regRole">
+            <option value="borrower">Заёмщик</option>
+            <option value="investor">Инвестор</option>
+            <option value="admin">Админ</option>
+        </select>
+        <button onclick="register()">Зарегистрировать</button>
+        <pre id="regResult"></pre>
+    </div>
+
+    <div>
+        <h3>2. Вход (получить токен)</h3>
+        <input type="email" id="loginEmail" placeholder="Email">
+        <input type="password" id="loginPassword" placeholder="Пароль">
+        <button onclick="login()">Войти</button>
+        <pre id="loginResult"></pre>
+        <input type="text" id="tokenStore" placeholder="Токен (сохранится автоматически)" size="60">
+    </div>
+
+    <div>
+        <h3>3. Создать заявку на займ (только заёмщик)</h3>
+        <input type="number" id="loanAmount" placeholder="Сумма">
+        <input type="number" id="loanTerm" placeholder="Срок (мес.)">
+        <input type="number" id="loanRate" placeholder="Ставка %">
+        <input type="text" id="loanPurpose" placeholder="Цель">
+        <button onclick="createLoan()">Создать заявку</button>
+        <pre id="loanResult"></pre>
+    </div>
+
+    <div>
+        <h3>4. Список открытых заявок</h3>
+        <button onclick="openLoans()">Показать</button>
+        <pre id="openLoansResult"></pre>
+    </div>
+
+    <div>
+        <h3>5. Инвестировать (только инвестор)</h3>
+        <input type="number" id="investLoanId" placeholder="ID заявки">
+        <input type="number" id="investAmount" placeholder="Сумма">
+        <button onclick="invest()">Инвестировать</button>
+        <pre id="investResult"></pre>
+    </div>
+
+    <div>
+        <h3>6. Мои инвестиции</h3>
+        <button onclick="myInvestments()">Показать</button>
+        <pre id="myInvestmentsResult"></pre>
+    </div>
+
+    <div>
+        <h3>7. Активные займы (отчёт)</h3>
+        <button onclick="activeLoans()">Показать</button>
+        <pre id="activeLoansResult"></pre>
+    </div>
+
+    <script>
+        let token = localStorage.getItem('token') || '';
+        document.getElementById('tokenStore').value = token;
+
+        async function request(url, method, body, needAuth = false) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (needAuth && token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            const options = { method, headers };
+            if (body) options.body = JSON.stringify(body);
+            const response = await fetch(url, options);
+            const data = await response.json();
+            if (!response.ok) throw new Error(JSON.stringify(data));
+            return data;
+        }
+
+        async function register() {
+            const body = {
+                full_name: document.getElementById('regName').value,
+                email: document.getElementById('regEmail').value,
+                phone: document.getElementById('regPhone').value,
+                password: document.getElementById('regPassword').value,
+                role: document.getElementById('regRole').value
+            };
+            try {
+                const res = await request('/register', 'POST', body);
+                document.getElementById('regResult').innerText = JSON.stringify(res, null, 2);
+            } catch (err) {
+                document.getElementById('regResult').innerText = 'Ошибка: ' + err.message;
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const formData = new URLSearchParams();
+            formData.append('username', email);
+            formData.append('password', password);
+            const response = await fetch('/token', { method: 'POST', body: formData });
+            const data = await response.json();
+            if (!response.ok) {
+                document.getElementById('loginResult').innerText = 'Ошибка: ' + JSON.stringify(data);
+                return;
+            }
+            token = data.access_token;
+            localStorage.setItem('token', token);
+            document.getElementById('tokenStore').value = token;
+            document.getElementById('loginResult').innerText = 'Токен получен: ' + token.substring(0, 30) + '...';
+        }
+
+        async function createLoan() {
+            const body = {
+                amount: parseFloat(document.getElementById('loanAmount').value),
+                term_months: parseInt(document.getElementById('loanTerm').value),
+                interest_rate: parseFloat(document.getElementById('loanRate').value),
+                purpose: document.getElementById('loanPurpose').value || null
+            };
+            try {
+                const res = await request('/loan-requests', 'POST', body, true);
+                document.getElementById('loanResult').innerText = JSON.stringify(res, null, 2);
+            } catch (err) {
+                document.getElementById('loanResult').innerText = 'Ошибка: ' + err.message;
+            }
+        }
+
+        async function openLoans() {
+            try {
+                const res = await request('/loan-requests/open', 'GET', null, false);
+                document.getElementById('openLoansResult').innerText = JSON.stringify(res, null, 2);
+            } catch (err) {
+                document.getElementById('openLoansResult').innerText = 'Ошибка: ' + err.message;
+            }
+        }
+
+        async function invest() {
+            const body = {
+                loan_request_id: parseInt(document.getElementById('investLoanId').value),
+                amount: parseFloat(document.getElementById('investAmount').value)
+            };
+            try {
+                const res = await request('/investments', 'POST', body, true);
+                document.getElementById('investResult').innerText = JSON.stringify(res, null, 2);
+            } catch (err) {
+                document.getElementById('investResult').innerText = 'Ошибка: ' + err.message;
+            }
+        }
+
+        async function myInvestments() {
+            try {
+                const res = await request('/investments/my', 'GET', null, true);
+                document.getElementById('myInvestmentsResult').innerText = JSON.stringify(res, null, 2);
+            } catch (err) {
+                document.getElementById('myInvestmentsResult').innerText = 'Ошибка: ' + err.message;
+            }
+        }
+
+        async function activeLoans() {
+            try {
+                const res = await request('/reports/active-loans', 'GET', null, false);
+                document.getElementById('activeLoansResult').innerText = JSON.stringify(res, null, 2);
+            } catch (err) {
+                document.getElementById('activeLoansResult').innerText = 'Ошибка: ' + err.message;
+            }
+        }
+    </script>
+</body>
+</html>
